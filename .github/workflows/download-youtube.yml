@@ -1,0 +1,73 @@
+steps:
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+
+- name: Setup Node.js
+  uses: actions/setup-node@v4
+  with:
+    node-version: '20'
+
+- name: Download yt-dlp
+  run: |
+    wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux
+    chmod +x yt-dlp_linux
+    sudo mv yt-dlp_linux /usr/local/bin/yt-dlp
+
+- name: Setup cookies
+  env:
+    YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+  run: echo "$YOUTUBE_COOKIES" > cookies.txt
+
+- name: Download videos
+  run: |
+    # ===========================================
+    # لیست ویدیوهای مورد نظر خود را اینجا وارد کنید
+    # ===========================================
+    VIDEO_LIST=(
+      "https://www.youtube.com/shorts/qTAckUJawCg"
+      "https://www.youtube.com/shorts/cK_HdGi9m9Y"
+      "https://www.youtube.com/shorts/uNaEz4gzUxg"
+    )
+    # ===========================================
+    
+    COUNTER=1
+    for url in "${VIDEO_LIST[@]}"; do
+      echo "📥 دانلود ویدیو $COUNTER: $url"
+      
+      yt-dlp --cookies cookies.txt \
+             --user-agent "Mozilla/5.0" \
+             --remote-components ejs:github \
+             --js-runtimes node \
+             -f "best[height<=360][ext=mp4]/best" \
+             -o "%(id)s_you_tube_video_$COUNTER.%(ext)s" \
+             "$url"
+      
+      if [ $? -eq 0 ]; then
+        echo "✅ ویدیو $COUNTER دانلود شد"
+      else
+        echo "❌ خطا در دانلود ویدیو $COUNTER"
+      fi
+      
+      COUNTER=$((COUNTER + 1))
+      sleep 2
+    done
+    
+    echo ""
+    echo "📊 ویدیوهای دانلود شده:"
+    ls -lh *.mp4 2>/dev/null || echo "هیچ ویدیویی دانلود نشد"
+
+- name: Commit and push to repository
+  run: |
+    git config --local user.name "github-actions[bot]"
+    git config --local user.email "github-actions[bot]@users.noreply.github.com"
+    
+    git add *.mp4 2>/dev/null || true
+    
+    if git diff --staged --quiet; then
+      echo "ℹ️ هیچ فایل جدیدی برای commit وجود ندارد"
+    else
+      VIDEO_COUNT=$(git diff --staged --name-only | grep ".mp4" | wc -l)
+      git commit -m "Update YouTube videos: ${VIDEO_COUNT} video(s) downloaded [skip ci]"
+      git push
+      echo "✅ ${VIDEO_COUNT} ویدیو با موفقیت اضافه شد"
